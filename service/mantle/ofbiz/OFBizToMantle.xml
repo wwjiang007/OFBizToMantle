@@ -12,7 +12,7 @@ You should have received a copy of the CC0 Public Domain Dedication
 along with this software (see the LICENSE.md file). If not, see
 <http://creativecommons.org/publicdomain/zero/1.0/>.
 -->
-<services xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://moqui.org/xsd/service-definition-2.0.xsd">
+<services xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://moqui.org/xsd/service-definition-2.1.xsd">
 
     <service verb="import" noun="OFBizData" transaction="ignore">
         <!-- in Tools run service 'mantle.ofbiz.OFBizToMantle.import#OFBizData' -->
@@ -69,14 +69,26 @@ along with this software (see the LICENSE.md file). If not, see
                 }
             }
 
+            OFBizTransform.clearMappingCaches()
+            logger.info("=== ETL Finished Load of ${etlInfo.entityCount} entities in ${(System.currentTimeMillis() - startTime) / 1000}s (extracted: ${etlInfo.extractCount}, skipped: ${etlInfo.skipCount}, loaded: ${etlInfo.loadCount})")
+
+            // EECAs aren't run to calc invoice and payment totals
+            ec.service.sync().name("mantle.account.InvoiceServices.calculate#MissingInvoiceTotals").call()
+            ec.service.sync().name("mantle.account.PaymentServices.calculate#MissingPaymentTotals").call()
+            // check for Finalized/Sent invoices with unpaid amount of 0 and set to Payment Sent (do after calculate#MissingInvoiceTotals so totals are in place)
+            ec.service.sync().name("mantle.account.InvoiceServices.check#InvoicesPaid").call()
+
+            // run recalculate_GlAccountOrgSummaries job's service so it starts from beginning of time regardless of if the job has been run before
+            ec.service.sync().name("mantle.ledger.LedgerServices.recalculate#GlAccountOrgSummaries").parameter("organizationPartyId", "Company").call()
+
+            // run indexes that would be run by data feed (but disabled in the startEtl method)
+            ec.service.job("IndexDataFeedDocuments").parameter("dataFeedId", "PopCommerceSearch").run()
+
             // resume the recalculate_GlAccountOrgSummaries and check_AllPartyDuplicates jobs
             ec.service.sync().name("update#moqui.service.job.ServiceJob")
                     .parameters([jobName:"recalculate_GlAccountOrgSummaries", paused:"N"]).requireNewTransaction(true).call()
             ec.service.sync().name("update#moqui.service.job.ServiceJob")
                     .parameters([jobName:"check_AllPartyDuplicates", paused:"N"]).requireNewTransaction(true).call()
-
-            OFBizTransform.clearMappingCaches()
-            logger.info("=== ETL Finished Load of ${etlInfo.entityCount} entities in ${(System.currentTimeMillis() - startTime) / 1000}s (extracted: ${etlInfo.extractCount}, skipped: ${etlInfo.skipCount}, loaded: ${etlInfo.loadCount})")
 
 
             class EtlInfo {
@@ -86,12 +98,15 @@ along with this software (see the LICENSE.md file). If not, see
 
             Thread startEtl(String entityName, ResourceReference fileRef, EtlInfo etlInfo) {
                 SimpleEtl.Extractor extractor = new FlatXmlExtractor(fileRef)
-                SimpleEtl.Loader loader = ec.entity.makeEtlLoader().useTryInsert() // .dummyFks()
+                SimpleEtl.Loader loader = ec.entity.makeEtlLoader()
+                // this can speed things up but in some databases (Postgres...) any error sets tx rollback only so doesn't work: .useTryInsert()
+                // load should work fine without this, ie migration designed to avoid needing it: .dummyFks()
                 SimpleEtl etl = new SimpleEtl(extractor, loader).setConfiguration(OFBizTransform.conf).stopOnError()
 
                 ExecutionContextImpl.ThreadPoolRunnable runnable = new ExecutionContextImpl.ThreadPoolRunnable((ExecutionContextFactoryImpl) ec.factory, {
                     ArtifactExecutionFacadeImpl ae = (ArtifactExecutionFacadeImpl) Moqui.executionContext.getArtifactExecution()
-                    ae.disableAuthz(); ae.disableEntityEca(); ae.disableEntityDataFeed()
+                    Moqui.executionContext.getUser().loginAnonymousIfNoUser()
+                    ae.disableAuthz(); ae.disableEntityDataFeed(); ae.disableEntityEca()
 
                     etl.process()
                     if (etl.hasError()) {
