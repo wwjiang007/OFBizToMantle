@@ -103,9 +103,13 @@ class OFBizTransform {
                 try { if (Timestamp.valueOf(postedDate) > nowStamp) logger.warn("AcctgTrans ${val.acctgTransId} has future postedDate ${postedDate}") }
                 catch (Exception e) { logger.warn("Error checking AcctgTrans timestamps", e) }
             }
+            // if tx type is AttInvoiceAdjust and there is no invoiceId but there is a paymentId then change it to AttPaymentAdjust
+            String acctgTransTypeEnumId = map('acctgTransTypeId', (String) val.acctgTransTypeId)
+            if ("AttInvoiceAdjust".equals(acctgTransTypeEnumId) && !val.invoiceId && val.paymentId)
+                acctgTransTypeEnumId = "AttPaymentAdjust"
 
             et.addEntry(new SimpleEntry("mantle.ledger.transaction.AcctgTrans", [acctgTransId:val.acctgTransId,
-                    acctgTransTypeEnumId:map('acctgTransTypeId', (String) val.acctgTransTypeId), otherPartyId:val.partyId,
+                    acctgTransTypeEnumId:acctgTransTypeEnumId, otherPartyId:val.partyId,
                     organizationPartyId:'Company', // if there are multiple internal orgs with transactions remove this and uncomment code in AcctgTransEntry
                     amountUomId:'USD', // change this for other currencies, if there are multiple currencies need to get from AcctgTransEntry like organizationPartyId
                     description:val.description, transactionDate:transactionDate, isPosted:val.isPosted, postedDate:postedDate,
@@ -322,6 +326,7 @@ class OFBizTransform {
         conf.addTransformer("OrderItemShipGrpInvRes", new Transformer() { void transform(EntryTransform et) { Map<String, Object> val = et.entry.etlValues
             // needs: Asset, OrderItem
             String productId = Moqui.executionContext.entity.find("mantle.product.asset.Asset").condition("assetId", val.inventoryItemId).one()?.productId
+            // TODO: populate quantityNotAvailable and quantityNotIssued
             et.addEntry(new SimpleEntry("mantle.product.issuance.AssetReservation", [assetReservationId:UUID.randomUUID().toString(),
                     assetId:val.inventoryItemId, orderId:val.orderId, orderItemSeqId:val.orderItemSeqId, productId:productId,
                     quantity:val.quantity, quantityNotAvailable:val.quantityNotAvailable, reservedDate:val.reservedDatetime,
@@ -404,10 +409,11 @@ class OFBizTransform {
                     roleTypeId:map('roleTypeId', (String) val.roleTypeId), lastUpdatedStamp:((String) val.lastUpdatedTxStamp).take(23)]))
         }})
         conf.addTransformer("InvoiceItem", new Transformer() { void transform(EntryTransform et) { Map<String, Object> val = et.entry.etlValues
+            EntityValue invoice = Moqui.executionContext.entity.find("mantle.account.invoice.Invoice").condition("invoiceId", val.invoiceId).one()
             et.addEntry(new SimpleEntry("mantle.account.invoice.InvoiceItem", [invoiceId:val.invoiceId,
                     invoiceItemSeqId:val.invoiceItemSeqId, itemTypeEnumId:map('invoiceItemTypeId', (String) val.invoiceItemTypeId),
                     assetId:val.inventoryItemId, productId:val.productId, taxableFlag:val.taxableFlag, quantity:(val.quantity ?: '1'),
-                    quantityUomId:val.uomId, amount:val.amount, description:val.description,
+                    quantityUomId:val.uomId, amount:val.amount, description:val.description, itemDate:invoice.invoiceDate,
                     overrideGlAccountId:map('glAccountId', (String) val.overrideGlAccountId),
                     salesOpportunityId:val.salesOpportunityId, lastUpdatedStamp:((String) val.lastUpdatedTxStamp).take(23)]))
             // NOTE: could look up taxAuthorityId by taxAuthGeoId and taxAuthPartyId
@@ -427,8 +433,9 @@ class OFBizTransform {
             // NOTE: not mapping visitId, productStoreId, billingAccountId, syncStatusId (though could be at some point)
         }})
         conf.addTransformer("OrderItemShipGroup", new Transformer() { void transform(EntryTransform et) { Map<String, Object> val = et.entry.etlValues
-            def partTotal = Moqui.executionContext.entity.find("mantle.order.OrderHeader").condition("orderId", val.orderId).one()?.grandTotal
-            et.addEntry(new SimpleEntry("mantle.order.OrderPart", [orderId:val.orderId,
+            EntityValue orderHeader = Moqui.executionContext.entity.find("mantle.order.OrderHeader").condition("orderId", val.orderId).one()
+            def partTotal = orderHeader?.grandTotal
+            et.addEntry(new SimpleEntry("mantle.order.OrderPart", [orderId:val.orderId, statusId:orderHeader.statusId,
                     orderPartSeqId:((String) val.shipGroupSeqId).padLeft(5, '0'),
                     shipmentMethodEnumId:map('shipmentMethodTypeId', (String) val.shipmentMethodTypeId),
                     vendorPartyId:val.vendorPartyId/*usually null, expected from OrderRole*/, carrierPartyId:val.carrierPartyId,
@@ -789,12 +796,18 @@ class OFBizTransform {
         /* ========== PaymentMethod ========== */
 
         conf.addTransformer("PaymentMethod", new Transformer() { void transform(EntryTransform et) { Map<String, Object> val = et.entry.etlValues
+            String paymentMethodTypeEnumId = map('paymentMethodTypeEnumId', (String) val.paymentMethodTypeId)
+            // if (!(paymentMethodTypeEnumId in ['PmtCreditCard', 'PmtBankAccount'])) { et.loadCurrent(false); return }
             et.addEntry(new SimpleEntry("mantle.account.method.PaymentMethod", [paymentMethodId:val.paymentMethodId,
-                    paymentMethodTypeEnumId:map('paymentMethodTypeEnumId', (String) val.paymentMethodTypeId),
-                    ownerPartyId:val.partyId, description:val.description, fromDate:val.fromDate, thruDate:val.thruDate,
-                    overrideGlAccountId:map('glAccountId', (String) val.glAccountId),
+                    paymentMethodTypeEnumId:paymentMethodTypeEnumId, ownerPartyId:val.partyId, description:val.description,
+                    fromDate:val.fromDate, thruDate:val.thruDate, overrideGlAccountId:map('glAccountId', (String) val.glAccountId),
                     lastUpdatedStamp:((String) val.lastUpdatedTxStamp).take(23)]))
             // NOTE: skipping finAccountId for now, needs FinAccount transformer
+            if (paymentMethodTypeEnumId == 'PmtBankAccount') {
+                // NOTE: this could come from EftAccount records, but also mapping to this type for OFBiz types other than EftAccount
+                et.addEntry(new SimpleEntry("mantle.account.method.BankAccount", [paymentMethodId:val.paymentMethodId,
+                        typeEnumId:'BatChecking', lastUpdatedStamp:((String) val.lastUpdatedTxStamp).take(23)]))
+            }
         }})
         conf.addTransformer("CreditCard", new Transformer() { void transform(EntryTransform et) { Map<String, Object> val = et.entry.etlValues
             et.addEntry(new SimpleEntry("mantle.account.method.PaymentMethod", [paymentMethodId:val.paymentMethodId,

@@ -66,8 +66,8 @@ class OFBizFieldMap {
                 DOMAIN_NAME:'CmtDomainName', WEB_ADDRESS:'CmtWebAddress'],
 
         // FinancialAccount
-        finAccountTypeId:[BANK_ACCOUNT:'BankAccount', CREDIT_CARD_ACCOUNT:'CreditCard', DEPOSIT_ACCOUNT:'DepositAccount',
-                EQUITY_LINE_ACCOUNT:'EquityLine', GIFTCERT_ACCOUNT:'GiftCertificate', INVESTMENT_ACCOUNT:'Investment',
+        finAccountTypeId:[BANK_ACCOUNT:'DepositAccount', CREDIT_CARD_ACCOUNT:'LoanAccount', DEPOSIT_ACCOUNT:'DepositAccount',
+                EQUITY_LINE_ACCOUNT:'LoanAccount', GIFTCERT_ACCOUNT:'GiftCertificate', INVESTMENT_ACCOUNT:'DepositAccount',
                 LOAN_ACCOUNT:'LoanAccount', REPLENISH_ACCOUNT:'Replenish', STORE_CREDIT_ACCT:'CustomerCredit', SVCCRED_ACCOUNT:'ServiceCredit'],
         finAccountStatusId:[FNACT_ACTIVE:'FaActive', FNACT_CANCELLED:'FaCancelled', FNACT_MANFROZEN:'FaManFrozen', FNACT_NEGPENDREPL:'FaNegPendRepl'],
         finAccountTransTypeId:[ADJUSTMENT:'FattAdjustment', DEPOSIT:'FattDeposit', WITHDRAWAL:'FattWithdraw'],
@@ -96,8 +96,9 @@ class OFBizFieldMap {
 
         // Order
         salesChannelEnumId:[EMAIL_SALES_CHANNEL:'ScEmail', PHONE_SALES_CHANNEL:'ScPhone', UNKNWN_SALES_CHANNEL:'ScUnknown', WEB_SALES_CHANNEL:'ScWeb'],
-        orderStatusId:[ORDER_APPROVED:'OrderApproved', ORDER_CANCELLED:'OrderCancelled', ORDER_COMPLETED:'OrderCompleted',
-                ORDER_CREATED:'OrderOpen', ORDER_HOLD:'OrderHold', ORDER_PROCESSING:'OrderProcessing',
+        // NOTE: ORDER_APPROVED and ORDER_PROCESSING are mapped to OrderPlaced for in flight orders to review, approve and ship after migration
+        orderStatusId:[ORDER_APPROVED:'OrderPlaced', ORDER_CANCELLED:'OrderCancelled', ORDER_COMPLETED:'OrderCompleted',
+                ORDER_CREATED:'OrderOpen', ORDER_HOLD:'OrderHold', ORDER_PROCESSING:'OrderPlaced',
                 ORDER_REJECTED:'OrderRejected', ORDER_SENT:'OrderSent'],
         shipmentMethodTypeId:[AIR:'ShMthNextDay', GROUND:'ShMthGround', NO_SHIPPING:null, STANDARD:'ShMthGround', 'USPS-CAN':'ShMthGround', 'USPS Free':'ShMthGround'],
         orderItemTypeId:[ASSET_ORDER_ITEM:'ItemAsset', BULK_ORDER_ITEM:'ItemInventory', INVENTORY_ORDER_ITEM:'ItemInventory',
@@ -284,7 +285,7 @@ class OFBizFieldMap {
             '199000':'134900000', // OTHER ASSETS
             '199001':'911000000', // TRANSFER CLEARING - ASSET
 
-            '210000':'210000000', '210001':'210000000', // ACCOUNTS PAYABLE
+            '210000':'212000000', '210001':'212000000', // ACCOUNTS PAYABLE
             '211000':'211000000', // ACCOUNTS PAYABLE - MERCHANDISE
             '212000':'212000000', // ACCOUNTS PAYABLE - OPERATING
             '212004':'212540000', '212005':'212550000', // LOAN PAYABLE
