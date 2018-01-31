@@ -42,7 +42,7 @@ class OFBizTransform {
                     'InventoryItem', 'PhysicalInventory',
                     'Shipment', 'ShipmentBoxType',
                     'Invoice', 'FinAccount', 'GlJournal'], // NOTE skipping: 'ProductPrice',
-            ['PartyClassification', 'PartyRelationship', 'CreditCard',
+            ['PartyRelationship', 'CreditCard',
                     'OrderItemShipGroup', 'OrderHeaderNote', 'CostComponent',
                     'ShipmentItem', 'ShipmentPackage', 'ShipmentRouteSegment',
                     'InvoiceContactMech', 'InvoiceRole', 'InvoiceItem',
@@ -409,11 +409,10 @@ class OFBizTransform {
                     roleTypeId:map('roleTypeId', (String) val.roleTypeId), lastUpdatedStamp:((String) val.lastUpdatedTxStamp).take(23)]))
         }})
         conf.addTransformer("InvoiceItem", new Transformer() { void transform(EntryTransform et) { Map<String, Object> val = et.entry.etlValues
-            EntityValue invoice = Moqui.executionContext.entity.find("mantle.account.invoice.Invoice").condition("invoiceId", val.invoiceId).one()
             et.addEntry(new SimpleEntry("mantle.account.invoice.InvoiceItem", [invoiceId:val.invoiceId,
                     invoiceItemSeqId:val.invoiceItemSeqId, itemTypeEnumId:map('invoiceItemTypeId', (String) val.invoiceItemTypeId),
                     assetId:val.inventoryItemId, productId:val.productId, taxableFlag:val.taxableFlag, quantity:(val.quantity ?: '1'),
-                    quantityUomId:val.uomId, amount:val.amount, description:val.description, itemDate:invoice.invoiceDate,
+                    quantityUomId:val.uomId, amount:val.amount, description:val.description, itemDate:null,
                     overrideGlAccountId:map('glAccountId', (String) val.overrideGlAccountId),
                     salesOpportunityId:val.salesOpportunityId, lastUpdatedStamp:((String) val.lastUpdatedTxStamp).take(23)]))
             // NOTE: could look up taxAuthorityId by taxAuthGeoId and taxAuthPartyId
@@ -561,9 +560,7 @@ class OFBizTransform {
             if (orderPart?.otherPartyOrderId) {
                 EntityValue invoice = Moqui.executionContext.entity.find("mantle.account.invoice.Invoice").condition("invoiceId", val.invoiceId).one()
                 if (invoice != null) {
-                    if (invoice.referenceNumber && !((String) invoice.referenceNumber).contains((String) orderPart.otherPartyOrderId)) {
-                        invoice.referenceNumber = ((String) invoice.referenceNumber) + ', ' + orderPart.otherPartyOrderId
-                    } else { invoice.referenceNumber = orderPart.otherPartyOrderId }
+                    invoice.otherPartyOrderId = orderPart.otherPartyOrderId
                     invoice.update()
                 }
             }
@@ -742,7 +739,7 @@ class OFBizTransform {
                     lastUpdatedStamp:((String) val.lastUpdatedTxStamp).take(23)]))
         }})
 
-        // NOTE: PaymentCreditType and PaymentCredit are custom entities for adjusting Payment
+        /* NOTE: PaymentCreditType and PaymentCredit are custom entities for adjusting Payment, move to invoice adjustment items:
         conf.addTransformer("PaymentCreditType", new Transformer() { void transform(EntryTransform et) { Map<String, Object> val = et.entry.etlValues
             et.loadCurrent(false)
             Map<String, Object> paymentCreditTypeCache = getMappingCache("PaymentCreditType")
@@ -759,7 +756,7 @@ class OFBizTransform {
             BigDecimal amount = new BigDecimal((String) val.amount)
 
             EntityValue payment = Moqui.executionContext.entity.find("mantle.account.payment.Payment").condition("paymentId", paymentId).one()
-            if (((String) payment.statusId) in ["PmntCancelled", "PmntVoid", "PmntDeclined", "PmntRefunded"]) return
+            if (((String) payment.statusId) in ["PmntCancelled", "PmntVoid", "PmntDeclined"]) return
             EntityList paymentAppls = Moqui.executionContext.entity.find("mantle.account.payment.PaymentApplication")
                     .condition("paymentId", paymentId).condition("invoiceId", "!=", null).orderBy("-amountApplied").list()
             if (paymentAppls.size() == 0) {
@@ -792,6 +789,7 @@ class OFBizTransform {
                     overrideGlAccountId:overrideGlAccountId, itemDate:((String) val.lastUpdatedTxStamp).take(23),
                     lastUpdatedStamp:((String) val.lastUpdatedTxStamp).take(23)]))
         }})
+        */
 
         /* ========== PaymentMethod ========== */
 
@@ -946,7 +944,7 @@ class OFBizTransform {
         // not doing ShipmentItemBilling (shipmentId, shipmentItemSeqId, invoiceId, invoiceItemSeqId), would need to be merged with ShipmentItemSource records from OrderShipment
 
         /* =========== Custom Transformer Examples =========== */
-
+        /*
         conf.addTransformer("PartyClassification", new Transformer() { void transform(EntryTransform et) {
             Map<String, Object> val = et.entry.etlValues
             String partyClassificationGroupId = val.partyClassificationGroupId
@@ -972,9 +970,10 @@ class OFBizTransform {
                 et.loadCurrent(false)
             }
         }})
+        */
     }
 
     // =========== Custom Mappings ===========
-    static Map<String, String> customerClasses = ['10000':'CustWholesale', '10001':'CustDistributor', '10002':'CustEnterprise']
-    static Map<String, String> settlementTermByClass = ['10010':'Net45Disc2Pct15', 'PCG_CASH':'Immediate', 'PCG_NET30':'Net30']
+    // static Map<String, String> customerClasses = ['10000':'CustWholesale', '10001':'CustDistributor', '10002':'CustEnterprise']
+    // static Map<String, String> settlementTermByClass = ['10010':'Net45Disc2Pct15', 'PCG_CASH':'Immediate', 'PCG_NET30':'Net30']
 }
